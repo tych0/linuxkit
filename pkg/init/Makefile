@@ -1,9 +1,10 @@
 C_COMPILE=linuxkit/c-compile:63b085bbaec1aa7c42a7bd22a4b1c350d900617d
 START_STOP_DAEMON=sbin/start-stop-daemon
+USERMODE_HELPER=sbin/usermode-helper
 
 default: push
 
-$(START_STOP_DAEMON): start-stop-daemon.c
+sbin/%: %.c
 	mkdir -p $(dir $@)
 	DOCKER_CONTENT_TRUST=1 docker pull $(C_COMPILE)
 	tar cf - $^ | DOCKER_CONTENT_TRUST=1 docker run --rm --net=none --log-driver=none -i $(C_COMPILE) -o $@ | tar xf -
@@ -15,7 +16,7 @@ IMAGE=init
 
 ETC=$(shell find etc -type f)
 
-hash: Dockerfile $(ETC) init $(START_STOP_DAEMON)
+hash: Dockerfile $(ETC) init $(START_STOP_DAEMON) $(USERMODE_HELPER)
 	DOCKER_CONTENT_TRUST=1 docker pull $(BASE)
 	tar cf - $^ | docker build --no-cache -t $(IMAGE):build -
 	docker run --rm $(IMAGE):build sh -c 'cat $^ /lib/apk/db/installed | sha1sum' | sed 's/ .*//' > $@
