@@ -1,19 +1,57 @@
-FROM linuxkit/kernel-compile:1b396c221af673757703258159ddc8539843b02b@sha256:6b32d205bfc6407568324337b707d195d027328dbfec554428ea93e7b0a8299b AS kernel-build
+FROM linuxkit/alpine:9bcf61f605ef0ce36cc94d59b8eac307862de6e1 AS kernel-build
+RUN apk add \
+    argp-standalone \
+    automake \
+    bash \
+    bc \
+    binutils-dev \
+    bison \
+    build-base \
+    curl \
+    diffutils \
+    flex \
+    git \
+    gmp-dev \
+    gnupg \
+    installkernel \
+    kmod \
+    libelf-dev \
+    libressl-dev \
+    linux-headers \
+    ncurses-dev \
+    sed \
+    squashfs-tools \
+    tar \
+    xz \
+    xz-dev \
+    zlib-dev && \
+# libunwind-dev pkg is missed from arm64 now, below statement will be removed if the pkg is available.
+    if [ $(uname -m) == x86_64 ]; then \
+        apk add libunwind-dev; \
+    fi
 
 ARG KERNEL_VERSION
 ARG KERNEL_SERIES
-ARG ARCH
 ARG DEBUG
 
 ENV KERNEL_SOURCE=https://www.kernel.org/pub/linux/kernel/v4.x/linux-${KERNEL_VERSION}.tar.xz
+ENV KERNEL_SHA256_SUMS=https://www.kernel.org/pub/linux/kernel/v4.x/sha256sums.asc
+ENV KERNEL_PGP2_SIGN=https://www.kernel.org/pub/linux/kernel/v4.x/linux-${KERNEL_VERSION}.tar.sign
 
-RUN curl -fsSL -o linux-${KERNEL_VERSION}.tar.xz ${KERNEL_SOURCE}
+# PGP keys: 589DA6B1 (greg@kroah.com) & 6092693E (autosigner@kernel.org) & 00411886 (torvalds@linux-foundation.org)
+COPY keys.asc keys.asc
 
-RUN cat linux-${KERNEL_VERSION}.tar.xz | tar --absolute-names -xJ &&  mv /linux-${KERNEL_VERSION} /linux
-
-RUN mkdir /config
-COPY kernel_config.* /config/
-COPY *.sh /config/
+# Download and verify kernel
+RUN curl -fsSLO ${KERNEL_SHA256_SUMS} && \
+    gpg2 -q --import keys.asc && \
+    gpg2 --verify sha256sums.asc && \
+    KERNEL_SHA256=$(grep linux-${KERNEL_VERSION}.tar.xz sha256sums.asc | cut -d ' ' -f 1) && \
+    curl -fsSLO ${KERNEL_SOURCE} && \
+    echo "${KERNEL_SHA256}  linux-${KERNEL_VERSION}.tar.xz" | sha256sum -c - && \
+    xz -d linux-${KERNEL_VERSION}.tar.xz && \
+    curl -fsSLO ${KERNEL_PGP2_SIGN} && \
+    gpg2 --verify linux-${KERNEL_VERSION}.tar.sign linux-${KERNEL_VERSION}.tar && \
+    cat linux-${KERNEL_VERSION}.tar | tar --absolute-names -x && mv /linux-${KERNEL_VERSION} /linux
 
 # Apply local patches
 COPY patches-${KERNEL_SERIES} /patches
@@ -23,23 +61,32 @@ RUN set -e && for patch in /patches/*.patch; do \
         patch -p1 < "$patch"; \
     done
 
+RUN mkdir /out
+
+COPY kernel_config.* /config/
+COPY makeconfig.sh /config/
+
 RUN \
   if [ -n "${DEBUG}" ]; then dbg=kernel_config.debug; else dbg=; fi && \
   /config/makeconfig.sh \
-    kernel_config.base \
-    "kernel_config.${ARCH}" \
-    "kernel_config.${ARCH}.${KERNEL_SERIES}" \
-    "kernel_config.${KERNEL_SERIES}" \
-    "$dbg"
-RUN /config/check-kernel-config.sh /linux/.config
-
-RUN mkdir /out
-RUN printf "KERNEL_SOURCE=${KERNEL_SOURCE}\n" > /out/kernel-source-info
+    /config/kernel_config.base \
+    "/config/kernel_config.$(uname -m)" \
+    "/config/kernel_config.$(uname -m).${KERNEL_SERIES}" \
+    "/config/kernel_config.${KERNEL_SERIES}" \
+    "/config/$dbg"
 
 # Kernel
 RUN make -j "$(getconf _NPROCESSORS_ONLN)" KCFLAGS="-fno-pie" && \
-    cp arch/x86_64/boot/bzImage /out/kernel && \
-    cp System.map /out
+    case $(uname -m) in \
+    x86_64) \
+        cp arch/x86_64/boot/bzImage /out/kernel; \
+        ;; \
+    aarch64) \
+        cp arch/arm64/boot/Image.gz /out/kernel; \
+        ;; \
+    esac && \
+    cp System.map /out && \
+    ([ -n "${DEBUG}" ] && cp vmlinux /out || true)
 
 # Modules
 RUN make INSTALL_MOD_PATH=/tmp/kernel-modules modules_install && \
@@ -68,7 +115,17 @@ RUN DVER=$(basename $(find /tmp/kernel-modules/lib/modules/ -mindepth 1 -maxdept
          tar cf - -T - | (cd $dir; tar xf -) && \
     ( cd /tmp && tar cf /out/kernel-dev.tar usr/src )
 
-FROM linuxkit/toybox-media:eee3dd4d72cd784801e95b1781e6c4f9d8a5e5eb@sha256:7f940e687164ee2676e11c61705c79f7dd2d144ee87ad17a494848a7045f5f53
+RUN printf "KERNEL_SOURCE=${KERNEL_SOURCE}\n" > /out/kernel-source-info
+
+# perf (Don't compile for 4.4.x, it's broken and tedious to fix)
+RUN if [ "${KERNEL_SERIES}" != "4.4.x" ]; then \
+       mkdir -p /build/perf && \
+       make -C tools/perf LDFLAGS=-static O=/build/perf && \
+       strip /build/perf/perf && \
+       cp /build/perf/perf /out; \
+     fi
+
+FROM scratch
 ENTRYPOINT []
 CMD []
 WORKDIR /

@@ -1,27 +1,49 @@
 # This builds the supported LinuxKit kernels. Kernels are wrapped up
-# in a minimal toybox container, which contains the bzImage, a tar
-# ball with modules and the kernel source.
+# in a scratch container, which contains the bzImage, a tar
+# ball with modules, the kernel sources, and in some case, the perf binary.
 #
-# Each kernel is pushed to hub twice, once as
-# linuxkit/kernel:<kernel>.<major>.<minor>-<hash> and once as
-# inuxkit/kernel:<kernel>.<major>.x. The <hash> is the git tree hash
-# of the current directory. The build will only rebuild the kernel
-# image if the git tree hash changed.
+# Each kernel is pushed to hub twice:
+# - linuxkit/kernel:<kernel>.<major>.<minor>-<hash>
+# - linuxkit/kernel:<kernel>.<major>.<minor>
+# The <hash> is the git tree hash of the current directory. The build
+# will only rebuild the kernel image if the git tree hash changed.
+#
+# For some kernels we also build a separate package containing the perf utility
+# which is specific to a given kernel. perf packages are tagged the same way
+# kernel packages.
 
-# Git tree hash of this directory. Override to force build
-HASH?=$(shell git ls-tree HEAD -- ../$(notdir $(CURDIR)) | awk '{print $$3}')
-# Name on Hub
+# Name and Org on Hub
+ORG?=linuxkit
 IMAGE:=kernel
-ARCH?=x86_64
+IMAGE_PERF:=kernel-perf
 
-.PHONY: check tag push sign
+ifeq ($(HASH),)
+HASH_COMMIT?=HEAD # Setting this is only really useful with the show-tag target
+HASH?=$(shell git ls-tree --full-tree $(HASH_COMMIT) -- $(CURDIR) | awk '{print $$3}')
+
+ifneq ($(HASH_COMMIT),HEAD) # Others can't be dirty by definition
+DIRTY=$(shell  git update-index -q --refresh && git diff-index --quiet HEAD -- $(CURDIR) || echo "-dirty")
+endif
+endif
+
+TAG=$(HASH)$(DIRTY)
+
+REPO?=https://github.com/linuxkit/linuxkit
+ifneq ($(REPO),)
+REPO_LABEL=--label org.opencontainers.image.source=$(REPO)
+endif
+ifeq ($(DIRTY),)
+REPO_COMMIT=$(shell git rev-parse HEAD)
+COMMIT_LABEL=--label org.opencontainers.image.revision=$(REPO_COMMIT)
+endif
+LABELS=$(REPO_LABEL) $(COMMIT_LABEL)
+
+.PHONY: check tag push
 # Targets:
 # build: builds all kernels
-# push:  pushes all tagged kernel images to hub
-# sign:  sign and push all kernel images to hub
+# push:  pushes and sign all tagged kernel images to hub
 build:
 push:
-sign:
 
 # A template for defining kernel build
 # Arguments:
@@ -29,46 +51,61 @@ sign:
 # $2: Kernel "series", e.g., 4.9.x
 # $3: Build a debug kernel (used as suffix for image)
 # This defines targets like:
-# build_4.9.x, push_4.9.x and sign_4.9.x and adds them as dependencies
+# build_4.9.x and  push_4.9.x and adds them as dependencies
 # to the global targets
 # Set $3 to "_dbg", to build debug kernels. This defines targets like
 # build_4.9.x_dbg and adds "_dbg" to the hub image name.
 define kernel
-build_$(2)$(3): Dockerfile Makefile $(wildcard patches-$(2)/*) $(wildcard kernel_config.$(2)*) kernel_config.base kernel_config.$(ARCH)
-	cp ../../test/pkg/kernel-config/check-kernel-config.sh .
-	docker pull linuxkit/$(IMAGE):$(1)$(3)-$(HASH) || \
+
+build_$(2)$(3): Dockerfile Makefile $(wildcard patches-$(2)/*) $(wildcard kernel_config-$(2)*) kernel_config.debug
+	docker pull $(ORG)/$(IMAGE):$(1)$(3)-$(TAG) || \
 		docker build \
 			--build-arg KERNEL_VERSION=$(1) \
 			--build-arg KERNEL_SERIES=$(2) \
-			--build-arg ARCH=$(ARCH) \
 			--build-arg DEBUG=$(3) \
-			--no-cache -t linuxkit/$(IMAGE):$(1)$(3)-$(HASH) .
-	-rm check-kernel-config.sh
+			$(LABELS) \
+			--no-cache -t $(ORG)/$(IMAGE):$(1)$(3)-$(TAG) .
 
 push_$(2)$(3): build_$(2)$(3)
-	docker pull linuxkit/$(IMAGE):$(1)$(3)-$(HASH) || \
-		(docker push linuxkit/$(IMAGE):$(1)$(3)-$(HASH) && \
-		 docker tag linuxkit/$(IMAGE):$(1)$(3)-$(HASH) linuxkit/$(IMAGE):$(2)$(3) && \
-		 docker push linuxkit/$(IMAGE):$(2)$(3))
+	@if [ x"$(DIRTY)" !=  x ]; then echo "Your repository is not clean. Will not push image"; exit 1; fi
+	DOCKER_CONTENT_TRUST=1 docker pull $(ORG)/$(IMAGE):$(1)$(3)-$(TAG) || \
+		(DOCKER_CONTENT_TRUST=1 docker push $(ORG)/$(IMAGE):$(1)$(3)-$(TAG) && \
+		 docker tag $(ORG)/$(IMAGE):$(1)$(3)-$(TAG) $(ORG)/$(IMAGE):$(1)$(3) && \
+		 DOCKER_CONTENT_TRUST=1 docker push $(ORG)/$(IMAGE):$(1)$(3))
 
-sign_$(2)$(3): build_$(2)$(3)
-	DOCKER_CONTENT_TRUST=1 docker pull linuxkit/$(IMAGE):$(1)$(3)-$(HASH) || \
-		(DOCKER_CONTENT_TRUST=1 docker push linuxkit/$(IMAGE):$(1)$(3)-$(HASH) && \
-		 docker tag linuxkit/$(IMAGE):$(1)$(3)-$(HASH) linuxkit/$(IMAGE):$(2)$(3) && \
-		 DOCKER_CONTENT_TRUST=1 docker push linuxkit/$(IMAGE):$(2)$(3))
+show-tag_$(2)$(3):
+	@echo $(ORG)/$(IMAGE):$(1)$(3)-$(TAG)
 
 build: build_$(2)$(3)
 push: push_$(2)$(3)
-sign: sign_$(2)$(3)
+show-tags: show-tag_$(2)$(3)
+
+ifneq ($(2), 4.4.x)
+build_perf_$(2)$(3): build_$(2)$(3)
+	docker pull $(ORG)/$(IMAGE_PERF):$(1)$(3)-$(TAG) || \
+		docker build -f Dockerfile.perf \
+			--build-arg IMAGE=$(ORG)/$(IMAGE):$(1)$(3)-$(TAG) \
+			--no-cache --network=none $(LABEL) -t $(ORG)/$(IMAGE_PERF):$(1)$(3)-$(TAG) .
+
+push_perf_$(2)$(3): build_perf_$(2)$(3)
+	@if [ x"$(DIRTY)" != x ]; then echo "Your repository is not clean. Will not push image"; exit 1; fi
+	DOCKER_CONTENT_TRUST=1 docker pull $(ORG)/$(IMAGE_PERF):$(1)$(3)-$(TAG) || \
+		(DOCKER_CONTENT_TRUST=1 docker push $(ORG)/$(IMAGE_PERF):$(1)$(3)-$(TAG) && \
+		 docker tag $(ORG)/$(IMAGE_PERF):$(1)$(3)-$(TAG) $(ORG)/$(IMAGE_PERF):$(1)$(3) && \
+		 DOCKER_CONTENT_TRUST=1 docker push $(ORG)/$(IMAGE_PERF):$(1)$(3))
+
+build: build_perf_$(2)$(3)
+push: push_perf_$(2)$(3)
+endif
+
 endef
 
 #
 # Build Targets
 # Debug targets only for latest stable and LTS stable
 #
-$(eval $(call kernel,4.11.2,4.11.x))
-$(eval $(call kernel,4.11.2,4.11.x,_dbg))
-$(eval $(call kernel,4.10.17,4.10.x))
-$(eval $(call kernel,4.10.17,4.10.x,_dbg))
-$(eval $(call kernel,4.9.29,4.9.x))
-$(eval $(call kernel,4.9.29,4.9.x,_dbg))
+$(eval $(call kernel,4.11.9,4.11.x))
+$(eval $(call kernel,4.11.9,4.11.x,_dbg))
+$(eval $(call kernel,4.9.36,4.9.x))
+$(eval $(call kernel,4.9.36,4.9.x,_dbg))
+$(eval $(call kernel,4.4.76,4.4.x))
