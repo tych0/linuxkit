@@ -28,7 +28,11 @@ def collect_config(f):
         config[opt] = value
     return config
 
-with open(os.path.join(CONFIG, "kernel_config-%s" % KERNEL_SERIES)) as f:
+CONFIG_FILE = os.path.join(CONFIG, "kernel_config-%s" % KERNEL_SERIES)
+if ARCH != "x86_64":
+    CONFIG_FILE += "-" + ARCH
+
+with open(CONFIG_FILE) as f:
     config = collect_config(f)
 
 opts = sorted(config.keys())
@@ -38,7 +42,7 @@ klib = kconfiglib.Config(sys.argv[1])
 klib.load_config(".config")
 
 ours = kconfiglib.Config(sys.argv[1])
-ours.load_config(os.path.join(CONFIG, "kernel_config-%s" % KERNEL_SERIES))
+ours.load_config(CONFIG_FILE)
 
 arch = []
 generic = []
