@@ -100,6 +100,13 @@ endif
 
 endef
 
+.PHONY: newconfig
+newconfig: Dockerfile.newconfig
+	mkdir -p upconfig
+	cp ../../kernel/kernel_config-* ./upconfig
+	docker build -f Dockerfile.newconfig --build-arg KERNEL_VERSION=4.4.76 --build-arg KERNEL_SERIES=4.4.x .
+	rm -rf upconfig
+
 #
 # Build Targets
 # Debug targets only for latest stable and LTS stable

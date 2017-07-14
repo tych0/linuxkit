@@ -3,12 +3,14 @@
 import sys
 import subprocess
 import os.path
+import platform
 
 import kconfiglib
 
-KERNEL_VERSION="4.11.x"
+KERNEL_SERIES="placeholder"
+ARCH=platform.machine()
 
-LINUXKIT_KERNEL=os.path.expanduser("~/packages/linuxkit/kernel")
+CONFIG=os.path.expanduser("/config")
 
 def collect_config(f):
     config = {}
@@ -26,7 +28,7 @@ def collect_config(f):
         config[opt] = value
     return config
 
-with open(os.path.join(LINUXKIT_KERNEL, "kernel_config-%s" % KERNEL_VERSION)) as f:
+with open(os.path.join(CONFIG, "kernel_config-%s" % KERNEL_SERIES)) as f:
     config = collect_config(f)
 
 opts = sorted(config.keys())
@@ -36,7 +38,7 @@ klib = kconfiglib.Config(sys.argv[1])
 klib.load_config(".config")
 
 ours = kconfiglib.Config(sys.argv[1])
-ours.load_config(os.path.join(LINUXKIT_KERNEL, "kernel_config-%s" % KERNEL_VERSION))
+ours.load_config(os.path.join(CONFIG, "kernel_config-%s" % KERNEL_SERIES))
 
 arch = []
 generic = []
