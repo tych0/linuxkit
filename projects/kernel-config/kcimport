@@ -35,7 +35,7 @@ if ARCH != "x86_64":
 
 PREV_FILE = os.path.join(CONFIG, "kernel_config-%s" % KERNEL_PREV)
 if ARCH != "x86_64":
-    CONFIG_FILE += "-" + ARCH
+    PREV_FILE += "-" + ARCH
 
 if KERNEL_PREV:
     with open(PREV_FILE) as f:
