@@ -50,7 +50,7 @@ ours = kconfiglib.Config(sys.argv[1])
 ours.load_config(CONFIG_FILE)
 
 def is_arch_specific(sym):
-    return sym.get_def_locations()[0][0].startswith("arch"):
+    return sym.get_def_locations()[0][0].startswith("arch")
 
 arch = []
 generic = []
@@ -93,8 +93,10 @@ def render_diff(diff):
             print("CONFIG_%s=%s" % (o, value))
 
 if KERNEL_PREV:
-    prev = collect_config(PREV_FILE)
+    with open(PREV_FILE) as f:
+        prev = collect_config(f)
 
+    print("ARCH\n\n")
     for o in sorted(arch):
         if o in prev:
             if o not in config:
@@ -104,8 +106,9 @@ if KERNEL_PREV:
         if config[o] == 'n':
             print("# CONFIG_%s is not set" % o)
         else:
-            print("CONFIG_%s=%s", (o, config[o]))
+            print("CONFIG_%s=%s" % (o, config[o]))
 
+    print("\n\nGENRIC\n\n")
     for o in sorted(generic):
         if o in prev:
             if o not in config:
@@ -114,7 +117,8 @@ if KERNEL_PREV:
         if config[o] == 'n':
             print("# CONFIG_%s is not set" % o)
         else:
-            print("CONFIG_%s=%s", (o, config[o]))
+            print("CONFIG_%s=%s" % (o, config[o]))
+    sys.exit(0)
 
 print("ARCH\n\n")
 render_diff(arch)

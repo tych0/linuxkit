@@ -104,7 +104,7 @@ endef
 newconfig: Dockerfile.newconfig
 	mkdir -p upconfig
 	cp ../../kernel/kernel_config-* ./upconfig
-	docker build -f Dockerfile.newconfig --build-arg KERNEL_VERSION=4.4.76 --build-arg KERNEL_SERIES=4.4.x .
+	docker build -f Dockerfile.newconfig --build-arg KERNEL_VERSION=4.11.9 --build-arg KERNEL_SERIES=4.11.x --build-arg KERNEL_PREV=4.9.x .
 	rm -rf upconfig
 
 #

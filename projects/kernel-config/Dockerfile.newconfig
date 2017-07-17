@@ -2,6 +2,7 @@ FROM alpine:edge AS kernel-build
 
 ARG KERNEL_VERSION
 ARG KERNEL_SERIES
+ARG KERNEL_PREV
 
 RUN apk update && apk add \
     argp-standalone \
@@ -73,6 +74,7 @@ COPY kernel_config.* /config/
 COPY *.sh /config/
 COPY kcimport /config
 RUN sed -i "s/KERNEL_SERIES=.*/KERNEL_SERIES=\"${KERNEL_SERIES}\"/" /config/kcimport
+RUN if [ -n "${KERNEL_PREV}" ]; then sed -i "s/KERNEL_PREV=.*/KERNEL_PREV=\"${KERNEL_PREV}\"/" /config/kcimport; fi
 
 COPY upconfig/* /config/
 
