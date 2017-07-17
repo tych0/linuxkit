@@ -9,6 +9,7 @@ import kconfiglib
 
 KERNEL_SERIES="placeholder"
 ARCH=platform.machine()
+KERNEL_PREV=None
 
 CONFIG=os.path.expanduser("/config")
 
@@ -32,6 +33,10 @@ CONFIG_FILE = os.path.join(CONFIG, "kernel_config-%s" % KERNEL_SERIES)
 if ARCH != "x86_64":
     CONFIG_FILE += "-" + ARCH
 
+PREV_FILE = os.path.join(CONFIG, "kernel_config-%s" % KERNEL_PREV)
+if ARCH != "x86_64":
+    CONFIG_FILE += "-" + ARCH
+
 with open(CONFIG_FILE) as f:
     config = collect_config(f)
 
@@ -43,6 +48,9 @@ klib.load_config(".config")
 
 ours = kconfiglib.Config(sys.argv[1])
 ours.load_config(CONFIG_FILE)
+
+def is_arch_specific(sym):
+    return sym.get_def_locations()[0][0].startswith("arch"):
 
 arch = []
 generic = []
@@ -71,7 +79,7 @@ for o in opts:
     if value == sym.get_value():
         continue
 
-    if sym.get_def_locations()[0][0].startswith("arch"):
+    if is_arch_specific(sym):
         arch.append(o)
     else:
         generic.append(o)
@@ -83,6 +91,30 @@ def render_diff(diff):
             print("# CONFIG_%s is not set" % o)
         else:
             print("CONFIG_%s=%s" % (o, value))
+
+if KERNEL_PREV:
+    prev = collect_config(PREV_FILE)
+
+    for o in sorted(arch):
+        if o in prev:
+            if o not in config:
+                print("dropped %s" % o)
+            continue
+
+        if config[o] == 'n':
+            print("# CONFIG_%s is not set" % o)
+        else:
+            print("CONFIG_%s=%s", (o, config[o]))
+
+    for o in sorted(generic):
+        if o in prev:
+            if o not in config:
+                print("dropped %s" % o)
+            continue
+        if config[o] == 'n':
+            print("# CONFIG_%s is not set" % o)
+        else:
+            print("CONFIG_%s=%s", (o, config[o]))
 
 print("ARCH\n\n")
 render_diff(arch)
