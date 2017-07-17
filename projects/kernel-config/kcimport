@@ -37,6 +37,10 @@ PREV_FILE = os.path.join(CONFIG, "kernel_config-%s" % KERNEL_PREV)
 if ARCH != "x86_64":
     CONFIG_FILE += "-" + ARCH
 
+if KERNEL_PREV:
+    with open(PREV_FILE) as f:
+        prev = collect_config(f)
+
 with open(CONFIG_FILE) as f:
     config = collect_config(f)
 
@@ -76,7 +80,7 @@ for o in opts:
 
     # If defconfig of this symbol matches our value, we don't need to track it:
     value = config[o]
-    if value == sym.get_value():
+    if value == sym.get_value() and (KERNEL_PREV is None or prev.get(o, value) == value):
         continue
 
     if is_arch_specific(sym):
@@ -93,14 +97,13 @@ def render_diff(diff):
             print("CONFIG_%s=%s" % (o, value))
 
 if KERNEL_PREV:
-    with open(PREV_FILE) as f:
-        prev = collect_config(f)
+    for o in sorted(prev.keys()):
+        if o not in arch and o not in config:
+            print("dropped %s" % o)
 
     print("ARCH\n\n")
     for o in sorted(arch):
-        if o in prev:
-            if o not in config:
-                print("dropped %s" % o)
+        if o in prev and prev[o] == config[o]:
             continue
 
         if config[o] == 'n':
@@ -110,9 +113,9 @@ if KERNEL_PREV:
 
     print("\n\nGENRIC\n\n")
     for o in sorted(generic):
-        if o in prev:
-            if o not in config:
-                print("dropped %s" % o)
+        if o == "VIRTUALIZATION":
+            print "found virtualization"
+        if o in prev and prev[o] == config[o]:
             continue
         if config[o] == 'n':
             print("# CONFIG_%s is not set" % o)

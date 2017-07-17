@@ -1,1 +1,5 @@
 CONFIG_NET_FOU=y (must match CONFIG_NET_FOU_IP_TUNNELS)
+
+* 4.4 -> 4.9 dropped CONFIG_IPV6_TUNNEL, was this intentional? (unchanged)
+* 4.4 -> 4.9 BLK_DEV_NVME m to y
+* 4.4 -> 4.9 GENEVE y to m
