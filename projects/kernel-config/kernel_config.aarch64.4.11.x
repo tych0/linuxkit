@@ -1,0 +1,1 @@
+# CONFIG_ARCH_THUNDER2 is not set
