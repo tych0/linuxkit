@@ -6,5 +6,8 @@ CONFIG_NET_FOU=y (must match CONFIG_NET_FOU_IP_TUNNELS)
 * STRICT_DEVMEM is arch specific in 4.4, but i've listed it in the generic
   files because it moves to generic later on
 * 4.9 -> 4.11 drops NETFILTER_XT_MATCH_SOCKET
+* 4.9 -> 4.11 PHYLIB m to y
 * UPROBE_EVENT was renamed to UPROBE_EVENTS (note the s) in 4.11; we set
   UPROBE_EVENT, but not UPROBE_EVENTS
+
+* CONFIG_INPUT_MOUSEDEV defaults to =n as of 4.11.x
