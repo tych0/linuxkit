@@ -61,10 +61,15 @@ function check_config()
             cfg=$(echo ${line} | cut -f1 -d=)
         fi
 
-        echo "$line set incorrectly (maybe $(grep -m 1 $cfg /linux/.config) ?)" && false
+        failure=1
+        echo "$line set incorrectly (maybe $(grep -m 1 $cfg /linux/.config) ?)"
     done < $1
 }
 
 for config in "$@"; do
     check_config "$config"
 done
+
+if [ -n "${failure}" ]; then
+    false
+fi
